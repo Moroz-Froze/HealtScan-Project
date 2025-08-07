@@ -8,7 +8,7 @@ WORKDIR /opt/build
 COPY frontend/package.json .
 
 # Устанавливаем зависимости
-RUN npm install
+RUN npm --prefix frontend install
 
 # Копируем весь код из frontend
 COPY frontend/. .
