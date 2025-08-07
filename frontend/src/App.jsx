@@ -1,100 +1,96 @@
-import { useState } from 'react';
+// src/App.jsx
+import React, { useState } from 'react';
+import './App.css';
 
-export default function App() {
+const SkinScanApp = () => {
+  const [image, setImage] = useState(null);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [imagePreview, setImagePreview] = useState('');
 
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+  // Имитация анализа нейросетью
+  const mockAnalysis = (file) => {
+    const types = [
+      { condition: 'Прыщ / акне', recommendation: 'Рекомендуется использовать салициловую кислоту, избегать жирной пищи.' },
+      { condition: 'Аллергическая реакция', recommendation: 'Возможно, контакт с раздражителем. Примите антигистаминное.' },
+      { condition: 'Экзема', recommendation: 'Используйте увлажняющий крем, избегайте горячего душа.' },
+      { condition: 'Папиллома', recommendation: 'Обратитесь к дерматологу для удаления.' },
+      { condition: 'Родинка (невус)', recommendation: 'Не трогайте. При изменении — срочно к врачу.' },
+    ];
+    return types[Math.floor(Math.random() * types.length)];
+  };
 
-  const handleFileChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Показать превью
-    const reader = new FileReader();
-    reader.onload = () => setImagePreview(reader.result);
-    reader.readAsDataURL(file);
-
-    // Подготовить данные
-    const formData = new FormData();
-    formData.append('image', file);
-
-    // Отправить
-    setLoading(true);
-    setError('');
-    setResult(null);
-
+  const handleTakePhoto = async () => {
     try {
-      const response = await fetch(`${backendUrl}/predict`, {
-        method: 'POST',
-        body: formData,
-      });
+      // Имитация доступа к камере через Telegram
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.capture = 'environment'; // задняя камера
 
-      if (!response.ok) {
-        throw new Error(`Ошибка сервера: ${response.status}`);
-      }
+      input.onchange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          const imageUrl = URL.createObjectURL(file);
+          setImage(imageUrl);
+          setLoading(true);
 
-      const data = await response.json();
-      setResult(data);
+          // Эмуляция отправки в нейросеть
+          setTimeout(() => {
+            const analysis = mockAnalysis(file);
+            setResult(analysis);
+            setLoading(false);
+          }, 2000);
+        }
+      };
+
+      input.click();
     } catch (err) {
-      console.error('Ошибка:', err);
-      setError(err.message || 'Не удалось обработать изображение');
-    } finally {
-      setLoading(false);
+      console.error('Ошибка доступа к камере:', err);
+      alert('Не удалось открыть камеру. Разрешите доступ.');
     }
   };
 
+  const handleReset = () => {
+    setImage(null);
+    setResult(null);
+    setLoading(false);
+  };
+
   return (
-    <div className="container">
-      <h1>🔍 SkinWound AI</h1>
-      <p>Загрузите фото кожной раны для анализа</p>
+    <div className="skin-scan-app">
+      <h1>📸 SkinScan AI</h1>
+      <p>Наведите камеру на кожную аномалию и сделайте снимок</p>
 
-      {/* Кнопка загрузки */}
-      <label className="upload-area">
-        <span className="upload-text">
-          {loading ? 'Обработка...' : '📎 Нажмите, чтобы выбрать фото'}
-        </span>
-        <input
-          type="file"
-          accept="image/*"
-          onChange={handleFileChange}
-          disabled={loading}
-        />
-      </label>
+      {!image ? (
+        <button className="photo-btn" onClick={handleTakePhoto}>
+          📷 Сделать фото
+        </button>
+      ) : (
+        <div className="result-section">
+          <img src={image} alt="Skin anomaly" className="preview" />
 
-      {/* Превью изображения */}
-      {imagePreview && (
-        <div style={{ marginBottom: '20px' }}>
-          <img
-            src={imagePreview}
-            alt="Preview"
-            style={{
-              maxWidth: '100%',
-              maxHeight: '200px',
-              borderRadius: '8px',
-              border: '1px solid #ddd',
-            }}
-          />
+          {loading ? (
+            <div className="loading">
+              <p>Анализируем... ⏳</p>
+            </div>
+          ) : (
+            <div className="diagnosis">
+              <h2>🔎 Результат анализа</h2>
+              <p><strong>Диагноз:</strong> {result.condition}</p>
+              <p><strong>Рекомендации:</strong> {result.recommendation}</p>
+              <button className="retry-btn" onClick={handleReset}>
+                Сделать новое фото
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Состояние загрузки */}
-      {loading && <p className="loading">Анализируем изображение...</p>}
-
-      {/* Ошибка */}
-      {error && <p className="error">⚠️ {error}</p>}
-
-      {/* Результат */}
-      {result && (
-        <div className="result">
-          <h3>Результат анализа</h3>
-          <p><strong>Тип повреждения:</strong> {result.class}</p>
-          <p><strong>Уверенность:</strong> {(result.confidence * 100).toFixed(2)}%</p>
-          <p><strong>Рекомендации:</strong> {result.advice}</p>
-        </div>
-      )}
+      <footer className="footer">
+        <small>⚠️ Это не замена врачу. При серьёзных симптомах — обращайтесь к дерматологу.</small>
+      </footer>
     </div>
   );
-}
+};
+
+export default SkinScanApp;
