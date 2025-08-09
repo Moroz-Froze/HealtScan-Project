@@ -7,5 +7,17 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: 'build',
+  },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/uploads': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      }
+    }
   }
 })
