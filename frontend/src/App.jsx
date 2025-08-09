@@ -1,14 +1,14 @@
 // src/App.jsx
 import React, { useState } from 'react';
 import './App.css';
+import { AuthProvider } from './AuthContext.jsx';
+import { useHistory } from './hooks/useHistory.js';
+import { useLiterature } from './hooks/useLiterature.js';
+import { apiClient } from './api.js';
 
 // Компонент главной страницы
 const HomePage = ({ onNavigate }) => {
-  const [queryHistory] = useState([
-    { id: 1, query: 'Укус слепня', icon: '🔍' },
-    { id: 2, query: 'Укус комара', icon: '🔍' },
-    { id: 3, query: 'Химический ожог', icon: '🔍' }
-  ]);
+  const { history, loading: historyLoading } = useHistory();
 
   const handleScan = () => {
     onNavigate('loading');
@@ -44,14 +44,24 @@ const HomePage = ({ onNavigate }) => {
       <div className="query-history">
         <div className="history-title">История запросов</div>
         <div className="history-list">
-          {queryHistory.map((item) => (
-            <div key={item.id} className="history-item">
-              <span className="history-icon">
-                <img src="/images/Лупа.svg" alt="Лупа" className="history-icon-svg" />
-              </span>
-              <span className="history-text">{item.query}</span>
+          {historyLoading ? (
+            <div className="history-item">
+              <span>Загрузка...</span>
             </div>
-          ))}
+          ) : history.length > 0 ? (
+            history.slice(0, 3).map((item) => (
+              <div key={item.id} className="history-item">
+                <span className="history-icon">
+                  <img src="/images/Лупа.svg" alt="Лупа" className="history-icon-svg" />
+                </span>
+                <span className="history-text">{item.query_text}</span>
+              </div>
+            ))
+          ) : (
+            <div className="history-item">
+              <span className="history-text">История пуста</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -113,12 +123,17 @@ const LoadingPage = ({ onNavigate }) => {
 // Компонент страницы загрузки изображения
 const UploadPage = ({ onNavigate }) => {
   const [selectedImage, setSelectedImage] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState(null);
 
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
     if (file) {
       const imageUrl = URL.createObjectURL(file);
       setSelectedImage(imageUrl);
+      setSelectedFile(file);
+      setError(null);
     }
   };
 
@@ -131,19 +146,53 @@ const UploadPage = ({ onNavigate }) => {
     input.click();
   };
 
-  const handleScan = () => {
-    if (selectedImage) {
-      onNavigate('loading');
-      // Имитация загрузки с возможностью ошибки
-      setTimeout(() => {
-        // Случайная ошибка для демонстрации
-        const shouldError = Math.random() < 0.3; // 30% вероятность ошибки
-        if (shouldError) {
-          onNavigate('error');
-        } else {
-          onNavigate('scanner', { image: selectedImage });
-        }
-      }, 2000);
+  const handleScan = async () => {
+    if (selectedFile && !uploading) {
+      try {
+        setUploading(true);
+        setError(null);
+        onNavigate('loading');
+        
+        // Загружаем изображение на сервер
+        const result = await apiClient.uploadImage(selectedFile);
+        
+        // Ждем обработки изображения
+        let attempts = 0;
+        const maxAttempts = 30; // 30 секунд максимум
+        
+        const pollResult = async () => {
+          try {
+            const scanResult = await apiClient.getScanResult(result.id);
+            
+            if (scanResult.status === 'completed') {
+              onNavigate('scanner', { 
+                image: selectedImage, 
+                scanResult: scanResult,
+                scanId: result.id
+              });
+            } else if (scanResult.status === 'failed') {
+              onNavigate('error');
+            } else if (attempts < maxAttempts) {
+              attempts++;
+              setTimeout(pollResult, 1000); // Проверяем каждую секунду
+            } else {
+              onNavigate('error');
+            }
+          } catch (error) {
+            console.error('Error polling scan result:', error);
+            onNavigate('error');
+          }
+        };
+        
+        // Начинаем опрос результатов через 2 секунды
+        setTimeout(pollResult, 2000);
+        
+      } catch (error) {
+        console.error('Upload failed:', error);
+        setError(error.message);
+        setUploading(false);
+        onNavigate('error');
+      }
     }
   };
 
@@ -174,12 +223,21 @@ const UploadPage = ({ onNavigate }) => {
           <div className="scan-overlay">
             <div className="scan-frame"></div>
           </div>
-          <button className="scan-button-large" onClick={handleScan}>
+          <button 
+            className={`scan-button-large ${uploading ? 'disabled' : ''}`} 
+            onClick={handleScan}
+            disabled={uploading}
+          >
             <div className="scan-icon-large">
               <img src="/images/Лупа.svg" alt="Лупа" className="scan-icon-lupa-svg" />
             </div>
-            <span>Сканировать</span>
+            <span>{uploading ? 'Загрузка...' : 'Сканировать'}</span>
           </button>
+          {error && (
+            <div className="error-message">
+              Ошибка: {error}
+            </div>
+          )}
         </div>
       )}
       
@@ -191,17 +249,12 @@ const UploadPage = ({ onNavigate }) => {
 };
 
 // Компонент страницы сканера
-const ScannerPage = ({ image, onNavigate }) => {
-  const [analysisResult] = useState({
-    condition: 'Укус слепня',
-    description: 'В большинстве случаев укус слепня для человека неприятен, но не опасен. Однако при склонности к аллергии или множественных укусах нужно обязательно обратиться к врачу.',
-    recommendations: [
-      'Промойте место укуса холодной водой',
-      'Приложите лед для уменьшения отека',
-      'Используйте антигистаминные препараты при аллергии',
-      'Обратитесь к врачу при сильной реакции'
-    ]
-  });
+const ScannerPage = ({ image, onNavigate, scanResult, scanId }) => {
+  const analysisResult = scanResult || {
+    condition_detected: 'Не определено',
+    description: 'Результат анализа недоступен',
+    recommendations: []
+  };
 
   return (
     <div className="scanner-page">
@@ -222,17 +275,24 @@ const ScannerPage = ({ image, onNavigate }) => {
         
         <div className="analysis-result">
           <div className="result-label">на изображении</div>
-          <div className="result-condition">{analysisResult.condition}</div>
+          <div className="result-condition">{analysisResult.condition_detected}</div>
           <div className="result-description">{analysisResult.description}</div>
+          {analysisResult.confidence && (
+            <div className="confidence">
+              Уверенность: {Math.round(analysisResult.confidence * 100)}%
+            </div>
+          )}
           
-          <div className="recommendations">
-            <h3>Рекомендации:</h3>
-            <ul>
-              {analysisResult.recommendations.map((rec, index) => (
-                <li key={index}>{rec}</li>
-              ))}
-            </ul>
-          </div>
+          {analysisResult.recommendations && analysisResult.recommendations.length > 0 && (
+            <div className="recommendations">
+              <h3>Рекомендации:</h3>
+              <ul>
+                {analysisResult.recommendations.map((rec, index) => (
+                  <li key={index}>{rec}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </div>
       
@@ -254,37 +314,16 @@ const ScannerPage = ({ image, onNavigate }) => {
 
 // Компонент страницы справочной литературы
 const LiteraturePage = ({ onNavigate }) => {
-  const [literatureItems] = useState([
-    {
-      id: 1,
-      title: 'Справочник по клинической офтальмологии',
-      icon: '/images/Документы.svg'
-    },
-    {
-      id: 2,
-      title: 'Инсектная аллергия: диагностика и лечение',
-      icon: '/images/Документы.svg'
-    },
-    {
-      id: 3,
-      title: 'Практическое руководство по неотложной помощи при укусах насекомых',
-      icon: '/images/Документы.svg'
-    },
-    {
-      id: 4,
-      title: 'Кариес зубов: современные методы диагностики',
-      icon: '/images/Документы.svg'
-    },
-    {
-      id: 5,
-      title: 'Аллергология и иммунология',
-      icon: '/images/Документы.svg'
-    }
-  ]);
+  const { literature, loading: literatureLoading, loadLiteratureDetail } = useLiterature();
 
-  const handleLiteratureClick = (item) => {
-    console.log('Открыть литературу:', item.title);
-    // Здесь можно добавить логику для открытия конкретной литературы
+  const handleLiteratureClick = async (item) => {
+    try {
+      console.log('Открыть литературу:', item.title);
+      // В будущем здесь можно открыть детальную страницу литературы
+      // const detail = await loadLiteratureDetail(item.id);
+    } catch (error) {
+      console.error('Failed to load literature:', error);
+    }
   };
 
   return (
@@ -294,18 +333,28 @@ const LiteraturePage = ({ onNavigate }) => {
       </div>
       
       <div className="literature-list">
-        {literatureItems.map((item) => (
-          <button
-            key={item.id}
-            className="literature-item"
-            onClick={() => handleLiteratureClick(item)}
-          >
-            <span className="literature-item-icon">
-              <img src={item.icon} alt="Документ" className="literature-icon-svg" />
-            </span>
-            <span className="literature-item-title">{item.title}</span>
-          </button>
-        ))}
+        {literatureLoading ? (
+          <div className="literature-item">
+            <span>Загрузка литературы...</span>
+          </div>
+        ) : literature.length > 0 ? (
+          literature.map((item) => (
+            <button
+              key={item.id}
+              className="literature-item"
+              onClick={() => handleLiteratureClick(item)}
+            >
+              <span className="literature-item-icon">
+                <img src="/images/Документы.svg" alt="Документ" className="literature-icon-svg" />
+              </span>
+              <span className="literature-item-title">{item.title}</span>
+            </button>
+          ))
+        ) : (
+          <div className="literature-item">
+            <span>Литература не найдена</span>
+          </div>
+        )}
       </div>
       
       {/* Навигация */}
@@ -514,7 +563,12 @@ const ZdravScanApp = () => {
       case 'upload':
         return <UploadPage onNavigate={handleNavigate} />;
       case 'scanner':
-        return <ScannerPage image={pageData.image} onNavigate={handleNavigate} />;
+        return <ScannerPage 
+          image={pageData.image} 
+          scanResult={pageData.scanResult}
+          scanId={pageData.scanId}
+          onNavigate={handleNavigate} 
+        />;
       case 'literature':
         return <LiteraturePage onNavigate={handleNavigate} />;
       case 'subscription':
@@ -535,4 +589,13 @@ const ZdravScanApp = () => {
   );
 };
 
-export default ZdravScanApp;
+// Компонент-обертка с AuthProvider
+const App = () => {
+  return (
+    <AuthProvider>
+      <ZdravScanApp />
+    </AuthProvider>
+  );
+};
+
+export default App;
