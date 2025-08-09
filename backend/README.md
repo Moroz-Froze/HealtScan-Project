@@ -1,6 +1,35 @@
-# ЗдравСкан Backend
+# HealthScan Backend
 
-FastAPI бэкенд для медицинского приложения ЗдравСкан.
+Бэкэнд API для приложения медицинского сканирования ЗдравСкан.
+
+## Функциональность
+
+- **Аутентификация**: JWT токены, интеграция с Telegram Web App
+- **Сканирование изображений**: Загрузка и анализ медицинских изображений
+- **Система подписок**: Управление подписками пользователей (пробные и платные)
+- **Справочная литература**: База знаний медицинской информации
+- **История запросов**: Отслеживание активности пользователей
+
+## Структура проекта
+
+```
+backend/
+├── app.py                 # Главное приложение FastAPI
+├── main.py               # Точка входа (совместимость)
+├── database.py           # Настройка базы данных
+├── models.py             # Модели SQLAlchemy
+├── auth.py               # Аутентификация и авторизация
+├── init_db.py            # Инициализация БД с тестовыми данными
+├── routers/              # API роутеры
+│   ├── auth_router.py    # Аутентификация
+│   ├── scan_router.py    # Сканирование изображений
+│   ├── subscription_router.py # Подписки
+│   ├── literature_router.py   # Справочная литература
+│   └── history_router.py      # История запросов
+├── services/             # Бизнес-логика
+│   └── image_analyzer.py # Анализ изображений
+└── uploads/              # Загруженные файлы
+```
 
 ## Установка и запуск
 
@@ -10,132 +39,146 @@ FastAPI бэкенд для медицинского приложения Здр
 pip install -r requirements.txt
 ```
 
-### 2. Настройка окружения
+### 2. Настройка переменных окружения
 
-Создайте файл `.env` в папке `backend`:
+Создайте файл `.env` в папке backend на основе `env_example.txt`:
 
-```env
-# База данных
+```bash
+SECRET_KEY=your-super-secret-key-here
+BOT_TOKEN=your-telegram-bot-token
 DATABASE_URL=sqlite:///./app.db
-
-# JWT
-SECRET_KEY=your-super-secret-key-change-in-production
-ACCESS_TOKEN_EXPIRE_MINUTES=10080
-
-# Telegram Bot
-BOT_TOKEN=YOUR_BOT_TOKEN_HERE
-
-# Настройки приложения
-DEBUG=True
 ```
 
 ### 3. Инициализация базы данных
 
 ```bash
+cd backend
 python init_db.py
 ```
 
 ### 4. Запуск сервера
 
 ```bash
-# Разработка
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+# Для разработки
+python app.py
 
-# Продакшн
-uvicorn main:app --host 0.0.0.0 --port 8000
+# Или через uvicorn
+uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ## API Endpoints
 
 ### Аутентификация
-- `POST /api/auth` - Аутентификация через Telegram
+- `POST /api/auth/` - Аутентификация через Telegram
+- `GET /api/auth/me` - Получение информации о пользователе
 
 ### Сканирование
-- `POST /api/scan` - Сканирование изображения (требует подписку)
+- `POST /api/scan/upload` - Загрузка и анализ изображения
+- `GET /api/scan/{scan_id}` - Получение результата сканирования
+- `GET /api/scan/` - История сканирований
+
+### Подписки
+- `GET /api/subscription/status` - Статус подписки
+- `POST /api/subscription/create` - Создание подписки
+- `GET /api/subscription/plans` - Доступные планы
+
+### Справочная литература
+- `GET /api/literature/` - Список литературы
+- `GET /api/literature/{id}` - Подробная информация
+- `GET /api/literature/search/` - Поиск в литературе
 
 ### История
-- `GET /api/history` - История сканирований пользователя
+- `GET /api/history/` - История запросов
+- `DELETE /api/history/{id}` - Удаление записи
+- `DELETE /api/history/` - Очистка истории
 
-### Литература
-- `GET /api/literature` - Список справочной литературы
+## Модели данных
 
-### Подписка
-- `POST /api/subscription` - Создание подписки
+### User (Пользователь)
+- id, telegram_id, first_name, last_name, username
+- created_at, updated_at
 
-### Профиль
-- `GET /api/user/profile` - Профиль пользователя
+### Subscription (Подписка)
+- user_id, subscription_type, status, start_date, end_date
+- is_trial, auto_renew
 
-### Системные
-- `GET /` - Информация об API
-- `GET /health` - Проверка здоровья сервера
+### Scan (Сканирование)
+- user_id, image_path, status, condition_detected
+- description, confidence, recommendations
 
-## Документация API
+### Literature (Литература)
+- title, description, content, category
+- author, tags, is_active
 
-После запуска сервера документация доступна по адресу:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+### QueryHistory (История запросов)
+- user_id, query_text, scan_id, created_at
 
-## Структура проекта
+## Конфигурация
 
+### Переменные окружения
+
+- `SECRET_KEY` - Секретный ключ для JWT токенов
+- `BOT_TOKEN` - Токен Telegram бота
+- `DATABASE_URL` - URL подключения к базе данных
+- `CORS_ORIGINS` - Разрешенные CORS домены
+
+### База данных
+
+По умолчанию используется SQLite. Для PostgreSQL измените DATABASE_URL:
 ```
-backend/
-├── main.py              # Основной файл приложения
-├── config.py            # Конфигурация
-├── auth.py              # Аутентификация (устаревший)
-├── init_db.py           # Инициализация БД
-├── requirements.txt     # Зависимости
-├── README.md           # Документация
-├── app.db              # База данных SQLite
-└── uploads/            # Папка для загруженных изображений
+DATABASE_URL=postgresql://username:password@localhost/healthscan_db
 ```
-
-## Модели базы данных
-
-### User
-- `id` - ID пользователя
-- `telegram_id` - ID в Telegram
-- `first_name` - Имя
-- `last_name` - Фамилия
-- `username` - Имя пользователя
-- `subscription_expires` - Дата окончания подписки
-- `is_subscribed` - Статус подписки
-
-### ScanHistory
-- `id` - ID записи
-- `user_id` - ID пользователя
-- `image_path` - Путь к изображению
-- `result` - Результат анализа (JSON)
-- `created_at` - Дата создания
-
-### Literature
-- `id` - ID записи
-- `title` - Название
-- `description` - Описание
-- `file_path` - Путь к файлу
-- `category` - Категория
-
-## Безопасность
-
-- Все эндпоинты (кроме `/api/auth`) требуют JWT токен
-- Валидация данных от Telegram
-- Проверка подписки для сканирования
-- Ограничения на размер файлов
 
 ## Развертывание
 
-### Локально
-```bash
-uvicorn main:app --reload
-```
-
 ### Docker
-```bash
-docker build -t zdravscan-backend .
-docker run -p 8000:8000 zdravscan-backend
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
-### Vercel/Heroku
-Настройте переменные окружения и запустите:
-```bash
-uvicorn main:app --host 0.0.0.0 --port $PORT
+### Heroku
+
+1. Создайте `Procfile`:
 ```
+web: uvicorn app:app --host 0.0.0.0 --port $PORT
+```
+
+2. Установите переменные окружения в настройках Heroku
+
+## Безопасность
+
+- JWT токены для аутентификации
+- Валидация данных через Pydantic
+- CORS настройки
+- Проверка подписи Telegram WebApp
+- Загрузка файлов с проверкой типа
+
+## Тестирование
+
+```bash
+# Запуск тестов
+pytest
+
+# Проверка API документации
+# Откройте http://localhost:8000/docs
+```
+
+## Мониторинг
+
+- `/health` - Проверка состояния сервиса
+- `/` - Информация о API
+- `/docs` - Swagger документация
+- `/redoc` - ReDoc документация
+

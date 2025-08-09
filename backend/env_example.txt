@@ -1,0 +1,18 @@
+# backend/.env example
+# Скопируйте этот файл в .env и заполните значения
+
+# JWT Secret Key - замените на случайную строку в продакшене
+SECRET_KEY=your-super-secret-key-change-in-production
+
+# Telegram Bot Token - получите у @BotFather
+BOT_TOKEN=YOUR_BOT_TOKEN_HERE
+
+# Database URL
+# Для SQLite (по умолчанию):
+DATABASE_URL=sqlite:///./app.db
+# Для PostgreSQL:
+# DATABASE_URL=postgresql://username:password@localhost/healthscan_db
+
+# CORS Origins (разделенные запятыми)
+CORS_ORIGINS=http://localhost:3000,http://localhost:5173,https://your-domain.com
+

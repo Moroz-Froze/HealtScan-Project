@@ -1,60 +1,132 @@
-# auth.py
+# backend/auth.py
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import jwt, JWTError
+from sqlalchemy.orm import Session
+from datetime import datetime, timedelta
+from typing import Dict, Any, Optional
+import json
 import hashlib
 import hmac
-import json
 from urllib.parse import parse_qsl
-from datetime import datetime, timedelta
-from typing import Optional
-from jose import jwt
-from dotenv import load_dotenv
 import os
 
-load_dotenv()
+from models import User
+from database import get_db
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-SECRET_KEY = os.getenv("SECRET_KEY")
-ALGORITHM = os.getenv("ALGORITHM")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
+# JWT конфигурация
+SECRET_KEY = os.getenv("SECRET_KEY", "your-super-secret-key-change-in-production")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 дней
 
-def validate_telegram_data(init_data: str) -> Optional[dict]:
+security = HTTPBearer()
+
+def create_access_token(data: Dict[str, Any]) -> str:
+    """Создание JWT токена"""
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def verify_token(token: str) -> Optional[Dict[str, Any]]:
+    """Проверка JWT токена"""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+    except JWTError:
+        return None
+
+def validate_telegram_data(init_data: str, bot_token: str) -> Optional[Dict[str, Any]]:
+    """
+    Проверяет подпись initData от Telegram Web App.
+    Возвращает данные пользователя или None.
+    """
     try:
         params = dict(parse_qsl(init_data))
-    except:
+    except Exception:
         return None
 
     hash_val = params.pop('hash', None)
     if not hash_val:
         return None
 
-    data_check_arr = sorted(params.items())
-    data_check_string = '\n'.join([f"{k}={v}" for k, v in data_check_arr])
+    # Сортируем параметры по ключу
+    sorted_params = sorted(params.items())
+    data_check_string = '\n'.join([f"{k}={v}" for k, v in sorted_params])
 
-    secret_key = hmac.new(b"WebAppBotToken", BOT_TOKEN.encode(), hashlib.sha256).digest()
-    computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+    # Создаём secret_key = HMAC-SHA256("WebAppBotToken", bot_token)
+    secret_key = hmac.new(b"WebAppBotToken", bot_token.encode(), hashlib.sha256).digest()
 
-    if computed_hash != hash_val:
+    # Вычисляем хэш
+    calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+
+    if calculated_hash != hash_val:
         return None
 
+    # Парсим данные пользователя
     user_str = params.get("user")
-    if user_str:
-        try:
-            user_data = json.loads(user_str)
-            return {
-                "id": user_data["id"],
-                "first_name": user_data.get("first_name", ""),
-                "last_name": user_data.get("last_name", ""),
-                "username": user_data.get("username", ""),
-                "language_code": user_data.get("language_code", "en"),
-            }
-        except:
-            return None
-    return None
+    if not user_str:
+        return None
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    try:
+        user_data = json.loads(user_str)
+        return {
+            "user": user_data,
+            "auth_date": params.get("auth_date"),
+            "hash": hash_val
+        }
+    except json.JSONDecodeError:
+        return None
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+) -> User:
+    """Получение текущего пользователя из JWT токена"""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    token = credentials.credentials
+    payload = verify_token(token)
+    
+    if payload is None:
+        raise credentials_exception
+    
+    user_id: int = payload.get("user_id")
+    if user_id is None:
+        raise credentials_exception
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise credentials_exception
+    
+    return user
+
+security_optional = HTTPBearer(auto_error=False)
+
+def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """Получение текущего пользователя (опционально)"""
+    if credentials is None:
+        return None
+    
+    try:
+        token = credentials.credentials
+        payload = verify_token(token)
+        
+        if payload is None:
+            return None
+        
+        user_id: int = payload.get("user_id")
+        if user_id is None:
+            return None
+        
+        user = db.query(User).filter(User.id == user_id).first()
+        return user
+    except Exception:
+        return None
